@@ -1,6 +1,5 @@
 #!/usr/bin/env ruby
 
-#$:.unshift File.dirname(__FILE__) + "/../../lib"
 require 'rubygems'
 require 'camping'
 require 'camping/session'
@@ -9,13 +8,18 @@ require 'mime/types'
 Camping.goes :RedRooster
 
 module RedRooster
-   
 end
 
 module RedRooster::Models
+   class Schedule < Base
+      validates_format_of :when, :with => /(^$)|(^(([0-1][0-9])|(2[0-3])):[0-5][0-9]$)/
+      belongs_to :computer
+   end
+
    class Computer < Base
       has_many :schedules
-      validates_format_of :mac, :with => /^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/
+      before_create :setup_schedules
+      validates_format_of :mac, :with => /[0-9A-F]{2}(:[0-9A-F]{2}){5}/i
       validates_uniqueness_of :mac, :name
       validates_presence_of :name
       validates_exclusion_of :name, :in => %w( Name )
@@ -23,7 +27,7 @@ module RedRooster::Models
       
       @@wake_cmd = "sudo etherwake"
       
-      def before_create
+      def setup_schedules
          7.times do |i|
             schedules << Schedule.new(:day => i)
          end
@@ -35,8 +39,8 @@ module RedRooster::Models
       
       def Computer.generate_cron
          cmds = []
-         computers = Computer.find :all
-         computers.each do |computer|
+         
+         Computer.all.each do |computer|
             computer.schedules.each do |schedule|
                if ! schedule.when.nil? && schedule.when != ''
                   m = schedule.when.match(/([0-9]{2}):([0-9]{2})/)
@@ -53,27 +57,20 @@ module RedRooster::Models
                cron_out.puts cmd
             end
             cron_out.close
-            #STDERR.puts(cmds)
          end
          
       end
    end
-   
-   class Schedule < Base
-      validates_format_of :when, :with => /(^$)|(^(([0-1][0-9])|(2[0-3])):[0-5][0-9]$)/
-      belongs_to :computer
-   end
+
    
    class CreateTheBasics < V 1.0
       def self.up
          create_table :redrooster_computers, :force => true do |t|
-            t.column :id,     :integer, :null => false
             t.column :name,   :string,  :limit => 255
             t.column :mac,    :string,  :limit => 255
          end
          
          create_table :redrooster_schedules, :force => true do |t|
-            t.column :id,           :integer, :null => false
             t.column :computer_id,  :integer, :null => false
             t.column :day,          :integer, :null => false
             t.column :when,         :string,  :limit => 255
@@ -117,8 +114,6 @@ module RedRooster::Controllers
          render :add
       end
       def post
-         #STDERR.puts(input.inspect)
-         # can't use create! as it will not return an object
          @computer = Computer.create :name => input.name, :mac => input.mac
          
          if @computer.errors.count > 0
@@ -132,8 +127,7 @@ module RedRooster::Controllers
    
    class Edit < R '/edit/(\d+)'
       def get(*args)
-         #STDERR.puts(args.inspect)
-         @computer = Computer.find(args[0])
+         @computer = Computer.find(args[0].to_i)
          render :edit
       end
       
@@ -180,17 +174,16 @@ module RedRooster::Controllers
    
    class UpdateSchedule < R '/schedule/(\w+)'
       def get(*args)
-         @computer = Computer.find(args[0])
+         @computer = Computer.find(args[0].to_i)
          render :schedule
       end
+
       def post(*args)
          @computer = Computer.find(args[0])
-         #STDERR.puts(@computer.schedules.inspect)
-         #STDERR.puts(input[:when].inspect)
          
          all_ok = true
          @computer.schedules.each do |schedule|
-            schedule.when = input[:when][schedule.id.to_s]
+            schedule.when = input["when"][schedule.id.to_s]
             all_ok = false unless schedule.save
          end
          
@@ -229,7 +222,7 @@ module RedRooster::Views
                   self << yield
                end
                div.footer! do
-                  p "© 2008 - Matthew Panetta."
+                  p " 2008 - Matthew Panetta."
                end
             end
          end
@@ -256,8 +249,7 @@ module RedRooster::Views
             end
          end
       end
-      div(:id => 'add-form') do
-         #STDERR.puts(@new_computer.inspect)
+      div(:id => 'add-form') do      
          _form(@new_computer, :action => R(Add))
       end
    end
@@ -279,14 +271,14 @@ module RedRooster::Views
    def delete
       div(:class=>"message question") {
          form({:method => 'post', :action => R(Delete, @computer.id)}) {
-            p "Are you sure you want to delete computer #{computer.name}? "
+            p "Are you sure you want to delete computer #{@computer.name}? "
             input :type => 'submit', :value => 'Delete'
          }
       }
    end
    
    def schedule
-      h2 "Update schedule for #{computer.name}"
+      h2 "Update schedule for #{@computer.name}"
       _message
       _schedule(@computer, :action => R(UpdateSchedule, @computer.id))
    end
@@ -296,7 +288,7 @@ module RedRooster::Views
          div(:class=>"message"){
             p 'There were problems validating the computer.'
             ul(:class=>'errors') {
-               computer.errors.each_full { |message|
+               computer.errors.each { |message|
                   li message
                }
             }
@@ -304,8 +296,8 @@ module RedRooster::Views
       end
       
       form({:method => 'post'}.merge(opts)) do
-         _input_text computer, :name => 'mac',  :default => '00:00:00:00:00:00'
-         _input_text computer, :name => 'name', :default => 'Name'
+         _input_text computer, :name => 'mac',  :placeholder => '00:00:00:00:00:00'
+         _input_text computer, :name => 'name', :placeholder => 'Name'
          
          input :type => 'submit', :value => (computer.id ? 'Update':'Add')
       end
@@ -325,7 +317,8 @@ module RedRooster::Views
                tr {
                   computer.schedules.each do |schedule|
                      td { 
-                        _input_text schedule, :name => "when", :id => schedule.id
+                        _input_text schedule, :name => "when", :id => schedule.id,
+                           :placeholder => "hh:mm"
                      }
                   end
                }
@@ -338,9 +331,9 @@ module RedRooster::Views
    end
    
    def _input_text(object, params)
-      #object, name, default)
       params[:default] ||= ''
-      
+      params[:placeholder] ||= ''
+
       name = params[:name]
       field_name = params[:name]
       id = params[:name].gsub(/_/, '-')
@@ -351,7 +344,8 @@ module RedRooster::Views
       
       input :name => field_name, :id => id, :type => 'text',
          :value => (object[name].nil? ? params[:default]:object[name]),
-         :class => (object.errors.invalid?(name) ? "input-error":"")
+         :class => (object.errors[name].empty? ? "":"input-error"),
+         :placeholder => params[:placeholder]
    end
    
    def _message

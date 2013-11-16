@@ -25,7 +25,7 @@ module RedRooster::Models
       validates_exclusion_of :name, :in => %w( Name )
       validates_exclusion_of :mac, :in => ['00:00:00:00:00:00']
       
-      @@wake_cmd = "sudo etherwake"
+      @@wake_cmd = "sudo /usr/sbin/etherwake"
       
       def setup_schedules
          7.times do |i|
@@ -341,7 +341,7 @@ module RedRooster::Views
          field_name = "#{field_name}[#{params[:id]}]"
          id = "#{id}-#{params[:id]}"
       end
-      
+
       input :name => field_name, :id => id, :type => 'text',
          :value => (object[name].nil? ? params[:default]:object[name]),
          :class => (object.errors[name].empty? ? "":"input-error"),

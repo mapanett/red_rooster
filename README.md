@@ -13,3 +13,11 @@ sudo echo "red_rooster ALL = NOPASSWD: /usr/sbin/etherwake" > /etc/sudoers.d/red
 sudo chmod 0440 /etc/sudoers.d/red_rooster
 ```
 
+To start it up 
+
+```
+bundle install
+camping red_rooster.rb
+```
+
+Then visit http://localhost:3301/
